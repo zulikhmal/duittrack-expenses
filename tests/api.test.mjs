@@ -398,3 +398,25 @@ test('worker.js routes /api/* to API handler and delegates non-API paths to ASSE
   assert.equal(await assetRes.text(), 'asset:/');
   assert.equal(assetsCalled, 1);
 });
+
+test('worker.js serves embedded static assets when env.ASSETS is absent', async () => {
+  const htmlRes = await worker.fetch(new Request('https://duittrack.example/'), {}, {});
+  assert.equal(htmlRes.status, 200);
+  assert.match(htmlRes.headers.get('content-type') || '', /^text\/html/);
+  assert.match(await htmlRes.text(), /DuitTrack/);
+
+  const cssRes = await worker.fetch(new Request('https://duittrack.example/styles.css'), {}, {});
+  assert.equal(cssRes.status, 200);
+  assert.match(cssRes.headers.get('content-type') || '', /^text\/css/);
+
+  const jsRes = await worker.fetch(new Request('https://duittrack.example/app.js'), {}, {});
+  assert.equal(jsRes.status, 200);
+  assert.match(jsRes.headers.get('content-type') || '', /^application\/javascript/);
+
+  const svgRes = await worker.fetch(new Request('https://duittrack.example/favicon.svg'), {}, {});
+  assert.equal(svgRes.status, 200);
+  assert.match(svgRes.headers.get('content-type') || '', /^image\/svg\+xml/);
+
+  const notFoundRes = await worker.fetch(new Request('https://duittrack.example/nonexistent'), {}, {});
+  assert.equal(notFoundRes.status, 404);
+});
