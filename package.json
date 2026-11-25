@@ -1,0 +1,13 @@
+{
+  "name": "duittrack-expenses",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DuitTrack - Expense & Bill Deduction Tracker on Cloudflare Workers + Google Sheets",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node --test tests/api.test.mjs",
+    "cf:dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
+  }
+}

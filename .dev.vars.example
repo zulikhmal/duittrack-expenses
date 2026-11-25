@@ -1,0 +1,28 @@
+# Salin fail ini ke `.dev.vars` untuk ujian lokal (`npm run dev` / `npm run cf:dev`).
+# Di Cloudflare Workers (production), masukkan nilai ini sebagai Secrets / Environment Variables.
+
+# ==========================================================
+# MOD 1 (DISYORKAN): Google Apps Script Web App
+# ==========================================================
+# URL Web App `/exec` selepas deploy `google-apps-script/Code.gs`
+GAS_WEBAPP_URL="https://script.google.com/macros/s/PASTE_DEPLOYMENT_ID_HERE/exec"
+
+# Pilihan: Padankan dengan Script Property `API_SECRET` dalam Google Apps Script
+GAS_API_SECRET=""
+
+# ==========================================================
+# MOD 2 (PILIHAN): Google Sheets API v4 (Service Account)
+# ==========================================================
+# Isi ketiga-tiga pemboleh ubah di bawah jika tidak mahu guna Apps Script.
+# GOOGLE_SPREADSHEET_ID="10tMHyAHHCFKBLmNYwKKlwzQ8fbrIBNhd04Ht3JrVtlQ"
+# GOOGLE_SERVICE_ACCOUNT_EMAIL="duittrack@your-project.iam.gserviceaccount.com"
+# GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# ==========================================================
+# KESELAMATAN & PAUTAN RUJUKAN
+# ==========================================================
+# Pilihan: Tetapkan kod PIN untuk mengunci akses aplikasi web
+APP_PIN=""
+
+# Pautan terus ke Google Sheet anda (dipaparkan sebagai butang rujukan dalam Tetapan)
+SPREADSHEET_URL="https://docs.google.com/spreadsheets/d/10tMHyAHHCFKBLmNYwKKlwzQ8fbrIBNhd04Ht3JrVtlQ/edit"

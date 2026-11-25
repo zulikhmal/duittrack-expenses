@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ms">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DuitTrack — Rekod Perbelanjaan &amp; Deduct Bil</title>
+  <meta name="description" content="Aplikasi web untuk rekod perbelanjaan, komitmen bulanan dan deduct automatik apabila dibayar — disambung terus ke Google Sheets.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- PIN Lock Overlay -->
+  <div id="pinOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+    <div class="modal-card modal-card--sm">
+      <div class="pin-lock-icon" aria-hidden="true">🔒</div>
+      <h2 id="pinTitle">Masukkan Kod PIN</h2>
+      <p class="muted">Aplikasi ini dilindungi oleh kod PIN Cloudflare Worker.</p>
+      <form id="pinForm" class="stack-form">
+        <label class="field">
+          <span>Kod PIN</span>
+          <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" required>
+        </label>
+        <p id="pinError" class="error-text hidden" role="alert"></p>
+        <button type="submit" class="btn btn-primary btn-full">Buka Kunci</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Sticky Header -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand-group">
+        <img src="/favicon.svg" alt="" class="brand-logo" width="34" height="34">
+        <div>
+          <div class="brand-title-row">
+            <span class="brand-name">DuitTrack</span>
+            <button id="statusBadge" type="button" class="status-pill status-pill--demo" title="Klik untuk tetapan sambungan Google Sheet">
+              <span class="status-dot"></span>
+              <span id="statusBadgeText">Mod Demo Lokal</span>
+            </button>
+          </div>
+          <p class="brand-subtitle">Rekod perbelanjaan &amp; deduct automatik ke Google Sheets</p>
+        </div>
+      </div>
+
+      <div class="topbar-controls">
+        <div class="month-nav" aria-label="Navigasi bulan">
+          <button id="prevMonthBtn" type="button" class="icon-btn" title="Bulan sebelumnya" aria-label="Bulan sebelumnya">&#8249;</button>
+          <span id="currentMonthLabel" class="month-label">November 2026</span>
+          <button id="nextMonthBtn" type="button" class="icon-btn" title="Bulan seterusnya" aria-label="Bulan seterusnya">&#8250;</button>
+          <button id="todayMonthBtn" type="button" class="btn btn-ghost btn-xs">Bulan Ini</button>
+        </div>
+
+        <div class="header-actions">
+          <button id="syncBtn" type="button" class="btn btn-outline btn-sm" title="Muat semula data dari pangkalan data">
+            <span class="sync-icon" aria-hidden="true">&#8635;</span>
+            <span class="hide-sm">Segerak</span>
+          </button>
+          <button id="themeToggleBtn" type="button" class="icon-btn" title="Tukar tema Cerah/Gelap" aria-label="Tukar tema">&#9790;</button>
+          <button id="settingsBtn" type="button" class="btn btn-outline btn-sm" title="Tetapan &amp; Sambungan Google Sheet">
+            <span aria-hidden="true">&#9881;</span>
+            <span class="hide-sm">Tetapan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Setup / Demo Banner -->
+    <section id="setupBanner" class="setup-banner hidden" aria-live="polite">
+      <div class="setup-banner-text">
+        <strong>Anda sedang menggunakan Mod Demo Lokal.</strong>
+        <span>Data kini disimpan dalam pelayar anda sahaja. Sambungkan URL Google Apps Script atau Cloudflare Worker untuk simpan terus ke Google Sheet.</span>
+      </div>
+      <div class="setup-banner-actions">
+        <button id="bannerConnectBtn" type="button" class="btn btn-primary btn-sm">Sambung Google Sheet</button>
+      </div>
+    </section>
+
+    <!-- 4 KPI Summary Cards -->
+    <section class="kpi-grid" aria-label="Ringkasan kewangan bulanan">
+      <article class="kpi-card">
+        <div class="kpi-head">
+          <span class="kpi-label">Bajet / Gaji Bulanan</span>
+          <button id="editBudgetBtn" type="button" class="link-btn">Ubah</button>
+        </div>
+        <div id="kpiBudget" class="kpi-value mono">RM 0.00</div>
+        <div id="kpiBudgetNote" class="kpi-sub muted">Tiada catatan bajet</div>
+      </article>
+
+      <article id="kpiBalanceCard" class="kpi-card kpi-card--hero">
+        <div class="kpi-head">
+          <span class="kpi-label">Baki Semasa</span>
+          <span class="kpi-tag">Selepas Deduct</span>
+        </div>
+        <div id="kpiBalance" class="kpi-value mono">RM 0.00</div>
+        <div id="kpiProjectedBalance" class="kpi-sub">Baki lepas semua bil: RM 0.00</div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-head">
+          <span class="kpi-label">Sudah Dibayar (Deducted)</span>
+          <span id="kpiPaidPct" class="kpi-badge kpi-badge--emerald">0%</span>
+        </div>
+        <div id="kpiPaid" class="kpi-value mono text-emerald">RM 0.00</div>
+        <div class="progress-track" aria-hidden="true">
+          <div id="kpiPaidBar" class="progress-fill progress-fill--emerald" style="width: 0%"></div>
+        </div>
+      </article>
+
+      <article class="kpi-card">
+        <div class="kpi-head">
+          <span class="kpi-label">Belum Dibayar (Baki Bil)</span>
+          <span id="kpiUnpaidCount" class="kpi-badge kpi-badge--rose">0 item</span>
+        </div>
+        <div id="kpiUnpaid" class="kpi-value mono text-rose">RM 0.00</div>
+        <div id="kpiTotalPlanned" class="kpi-sub muted">Jumlah komitmen: RM 0.00</div>
+      </article>
+    </section>
+
+    <!-- Main 2-Column Workspace -->
+    <div class="workspace-grid">
+      <!-- Left / Main Column -->
+      <div class="workspace-main">
+        <!-- Quick Add Form -->
+        <section class="card add-card" aria-labelledby="addFormHeading">
+          <div class="card-head">
+            <h2 id="addFormHeading">Tambah Perbelanjaan / Komitmen</h2>
+            <span class="muted small-text">Masukkan item baru dan pilih sama ada terus deduct atau tunggu bayar</span>
+          </div>
+
+          <form id="addExpenseForm" class="add-form">
+            <div class="form-row-main">
+              <label class="field field-grow">
+                <span>Nama Perbelanjaan</span>
+                <input id="addTitle" type="text" placeholder="Contoh: Sewa Rumah, Bil Elektrik, Makan Tengahari" required maxlength="120">
+              </label>
+
+              <label class="field field-amount">
+                <span>Jumlah (RM)</span>
+                <input id="addAmount" type="number" step="0.01" min="0" placeholder="0.00" class="mono" required>
+              </label>
+
+              <label class="field field-cat">
+                <span>Kategori</span>
+                <select id="addCategory">
+                  <option value="Rumah &amp; Bil">Rumah &amp; Bil</option>
+                  <option value="Makan &amp; Minum">Makan &amp; Minum</option>
+                  <option value="Pengangkutan">Pengangkutan</option>
+                  <option value="Langganan">Langganan</option>
+                  <option value="Hutang &amp; Pinjaman">Hutang &amp; Pinjaman</option>
+                  <option value="Simpanan &amp; Pelaburan">Simpanan &amp; Pelaburan</option>
+                  <option value="Keluarga &amp; Lain-lain">Keluarga &amp; Lain-lain</option>
+                </select>
+              </label>
+
+              <label class="field field-date">
+                <span>Tarikh</span>
+                <input id="addDate" type="date" required>
+              </label>
+            </div>
+
+            <div class="form-row-bottom">
+              <label class="field field-notes">
+                <span>Catatan (Pilihan)</span>
+                <input id="addNotes" type="text" placeholder="No. akaun, tarikh akhir, atau nota ringkas" maxlength="200">
+              </label>
+
+              <div class="pay-mode-toggle" role="radiogroup" aria-label="Status bayaran awal">
+                <label class="toggle-option">
+                  <input type="radio" name="addPayStatus" value="unpaid" checked>
+                  <span>Belum Bayar (Komitmen)</span>
+                </label>
+                <label class="toggle-option">
+                  <input type="radio" name="addPayStatus" value="paid">
+                  <span>Dah Bayar (Terus Deduct)</span>
+                </label>
+              </div>
+
+              <button id="addSubmitBtn" type="submit" class="btn btn-primary">
+                <span>+ Tambah</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Filter Toolbar & Expenses List -->
+        <section class="card list-card" aria-labelledby="listHeading">
+          <div class="toolbar">
+            <div class="toolbar-top">
+              <h2 id="listHeading">Senarai Perbelanjaan <span id="listCountBadge" class="count-pill">0</span></h2>
+              <button id="copyMonthBtn" type="button" class="btn btn-outline btn-xs" title="Salin senarai komitmen dari bulan sebelum ini sebagai Belum Bayar">
+                &#128203; Salin dari Bulan Lepas
+              </button>
+            </div>
+
+            <div class="toolbar-filters">
+              <div class="search-box">
+                <span class="search-icon" aria-hidden="true">&#128269;</span>
+                <input id="searchInput" type="search" placeholder="Cari nama atau catatan..." aria-label="Cari perbelanjaan">
+              </div>
+
+              <div class="status-pills" role="group" aria-label="Tapis ikut status">
+                <button type="button" class="filter-pill is-active" data-status="all">Semua</button>
+                <button type="button" class="filter-pill" data-status="unpaid">Belum Bayar</button>
+                <button type="button" class="filter-pill" data-status="partial">Separuh</button>
+                <button type="button" class="filter-pill" data-status="paid">Dah Bayar</button>
+              </div>
+
+              <select id="categoryFilter" class="compact-select" aria-label="Tapis ikut kategori">
+                <option value="all">Semua Kategori</option>
+              </select>
+
+              <select id="sortSelect" class="compact-select" aria-label="Susunan senarai">
+                <option value="date_desc">Tarikh Terbaru</option>
+                <option value="date_asc">Tarikh Terlama</option>
+                <option value="amount_desc">Jumlah Tertinggi</option>
+                <option value="unpaid_first">Belum Bayar Dahulu</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="expensesList" class="expenses-list" aria-live="polite"></div>
+        </section>
+      </div>
+
+      <!-- Right / Sidebar Column -->
+      <aside class="workspace-side">
+        <section class="card side-card" aria-labelledby="categoryHeading">
+          <div class="card-head">
+            <h2 id="categoryHeading">Pecahan Kategori</h2>
+            <span id="categoryMonthTag" class="muted small-text"></span>
+          </div>
+          <div id="categoryBreakdown" class="category-breakdown"></div>
+        </section>
+
+        <section class="card side-card" aria-labelledby="summaryHeading">
+          <div class="card-head">
+            <h2 id="summaryHeading">Ringkasan Status</h2>
+          </div>
+          <div id="statusSummaryBox" class="status-summary-box">
+            <div class="stat-line">
+              <span class="muted">Kadar Penyelesaian Bil</span>
+              <strong id="summaryCompletionRate" class="mono">0%</strong>
+            </div>
+            <div class="stat-line">
+              <span class="muted">Bil Selesai / Jumlah Item</span>
+              <strong id="summaryPaidRatio" class="mono">0 / 0</strong>
+            </div>
+            <div class="stat-line">
+              <span class="muted">Baki Belum Bayar</span>
+              <strong id="summaryRemainingAmount" class="mono text-rose">RM 0.00</strong>
+            </div>
+            <div class="stat-line">
+              <span class="muted">Jumlah Anggaran Bulanan</span>
+              <strong id="summaryPlannedAmount" class="mono">RM 0.00</strong>
+            </div>
+          </div>
+          <div class="side-actions">
+            <button id="exportCsvBtn" type="button" class="btn btn-outline btn-full btn-sm">
+              &#8681; Eksport CSV Bulan Ini
+            </button>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Modal: Partial Payment -->
+  <div id="partialModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="partialModalTitle">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-head">
+        <h3 id="partialModalTitle">Bayar Separuh / Deduct</h3>
+        <button type="button" class="icon-btn" data-close-modal="partialModal" aria-label="Tutup">&times;</button>
+      </div>
+      <div id="partialItemSummary" class="modal-info-box"></div>
+      <form id="partialForm" class="stack-form">
+        <input id="partialExpenseId" type="hidden">
+        <div class="preset-row">
+          <button type="button" class="btn btn-outline btn-xs" data-partial-pct="0.25">25%</button>
+          <button type="button" class="btn btn-outline btn-xs" data-partial-pct="0.5">50%</button>
+          <button type="button" class="btn btn-outline btn-xs" data-partial-pct="1">Baki Penuh</button>
+        </div>
+        <label class="field">
+          <span>Tambah Bayaran Kali Ini (RM)</span>
+          <input id="partialAddAmount" type="number" step="0.01" min="0.01" class="mono" required>
+        </label>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="partialModal">Batal</button>
+          <button type="submit" class="btn btn-primary">Deduct Sekarang</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Expense -->
+  <div id="editModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="editModalTitle">Kemaskini Perbelanjaan</h3>
+        <button type="button" class="icon-btn" data-close-modal="editModal" aria-label="Tutup">&times;</button>
+      </div>
+      <form id="editExpenseForm" class="stack-form">
+        <input id="editId" type="hidden">
+        <label class="field">
+          <span>Nama Perbelanjaan</span>
+          <input id="editTitle" type="text" required maxlength="120">
+        </label>
+        <div class="form-grid-2">
+          <label class="field">
+            <span>Jumlah Penuh (RM)</span>
+            <input id="editAmount" type="number" step="0.01" min="0" class="mono" required>
+          </label>
+          <label class="field">
+            <span>Sudah Dibayar / Deduct (RM)</span>
+            <input id="editPaidAmount" type="number" step="0.01" min="0" class="mono" required>
+          </label>
+        </div>
+        <div class="form-grid-2">
+          <label class="field">
+            <span>Kategori</span>
+            <select id="editCategory">
+              <option value="Rumah &amp; Bil">Rumah &amp; Bil</option>
+              <option value="Makan &amp; Minum">Makan &amp; Minum</option>
+              <option value="Pengangkutan">Pengangkutan</option>
+              <option value="Langganan">Langganan</option>
+              <option value="Hutang &amp; Pinjaman">Hutang &amp; Pinjaman</option>
+              <option value="Simpanan &amp; Pelaburan">Simpanan &amp; Pelaburan</option>
+              <option value="Keluarga &amp; Lain-lain">Keluarga &amp; Lain-lain</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Tarikh</span>
+            <input id="editDate" type="date" required>
+          </label>
+        </div>
+        <label class="field">
+          <span>Catatan</span>
+          <input id="editNotes" type="text" maxlength="200">
+        </label>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="editModal">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Monthly Budget -->
+  <div id="budgetModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="budgetModalTitle">
+    <div class="modal-card modal-card--sm">
+      <div class="modal-head">
+        <h3 id="budgetModalTitle">Tetapkan Bajet / Gaji Bulanan</h3>
+        <button type="button" class="icon-btn" data-close-modal="budgetModal" aria-label="Tutup">&times;</button>
+      </div>
+      <form id="budgetForm" class="stack-form">
+        <p id="budgetMonthInfo" class="muted small-text"></p>
+        <label class="field">
+          <span>Jumlah Bajet / Pendapatan (RM)</span>
+          <input id="budgetAmountInput" type="number" step="0.01" min="0" class="mono" required>
+        </label>
+        <label class="field">
+          <span>Catatan (Pilihan)</span>
+          <input id="budgetNotesInput" type="text" placeholder="Contoh: Gaji November + Bonus" maxlength="150">
+        </label>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="budgetModal">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Bajet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Settings & Google Sheet Connection -->
+  <div id="settingsModal" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="settingsModalTitle">Tetapan &amp; Sambungan Google Sheet</h3>
+        <button type="button" class="icon-btn" data-close-modal="settingsModal" aria-label="Tutup">&times;</button>
+      </div>
+
+      <div class="stack-form">
+        <div class="modal-info-box">
+          <div class="stat-line">
+            <span class="muted">Mod Aktif:</span>
+            <strong id="settingsActiveMode">Mod Demo Lokal</strong>
+          </div>
+          <div class="stat-line" style="margin-top: 6px;">
+            <span class="muted">Pautan Google Sheet:</span>
+            <a id="settingsSheetLink" href="https://docs.google.com/spreadsheets/d/10tMHyAHHCFKBLmNYwKKlwzQ8fbrIBNhd04Ht3JrVtlQ/edit" target="_blank" rel="noopener noreferrer" class="link-btn">Buka Google Sheet &#8599;</a>
+          </div>
+        </div>
+
+        <form id="settingsForm" class="stack-form">
+          <label class="field">
+            <span>URL Google Apps Script Web App (`/exec`)</span>
+            <input id="settingsGasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+            <span class="field-hint">Digunakan terus dari pelayar jika Cloudflare Worker secret `GAS_WEBAPP_URL` belum ditetapkan.</span>
+          </label>
+
+          <label class="field">
+            <span>API Secret (Pilihan)</span>
+            <input id="settingsGasSecret" type="password" placeholder="Padankan dengan API_SECRET di Apps Script jika ada">
+          </label>
+
+          <label class="field">
+            <span>Pautan Rujukan Google Sheet</span>
+            <input id="settingsSheetUrlInput" type="url" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+          </label>
+
+          <div class="settings-action-row">
+            <button id="testConnBtn" type="button" class="btn btn-outline btn-sm">Uji Sambungan</button>
+            <button id="settingsSaveBtn" type="submit" class="btn btn-primary btn-sm">Simpan Tetapan</button>
+          </div>
+        </form>
+
+        <hr class="divider">
+
+        <div class="settings-secondary-actions">
+          <button id="settingsExportCsvBtn" type="button" class="btn btn-outline btn-sm">Eksport CSV</button>
+          <button id="resetDemoBtn" type="button" class="btn btn-danger-outline btn-sm">Reset Data Demo</button>
+          <button id="clearGasBtn" type="button" class="btn btn-ghost btn-sm">Putus Sambungan Lokal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
