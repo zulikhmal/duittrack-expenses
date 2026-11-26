@@ -37,9 +37,9 @@
         <div>
           <div class="brand-title-row">
             <span class="brand-name">DuitTrack</span>
-            <button id="statusBadge" type="button" class="status-pill status-pill--demo" title="Klik untuk tetapan sambungan Google Sheet">
+            <button id="statusBadge" type="button" class="status-pill" title="Klik untuk tetapan sambungan Google Sheet">
               <span class="status-dot"></span>
-              <span id="statusBadgeText">Mod Demo Lokal</span>
+              <span id="statusBadgeText">Menyambung Google Sheet...</span>
             </button>
           </div>
           <p class="brand-subtitle">Rekod perbelanjaan &amp; deduct automatik ke Google Sheets</p>
@@ -70,11 +70,11 @@
   </header>
 
   <main class="container main-content">
-    <!-- Setup / Demo Banner -->
+    <!-- Setup / Connection Banner -->
     <section id="setupBanner" class="setup-banner hidden" aria-live="polite">
       <div class="setup-banner-text">
-        <strong>Anda sedang menggunakan Mod Demo Lokal.</strong>
-        <span>Data kini disimpan dalam pelayar anda sahaja. Sambungkan URL Google Apps Script atau Cloudflare Worker untuk simpan terus ke Google Sheet.</span>
+        <strong>Google Sheet belum disambungkan.</strong>
+        <span>Sila tetapkan GAS_WEBAPP_URL pada Cloudflare Worker atau masukkan URL Google Apps Script (/exec) di Tetapan.</span>
       </div>
       <div class="setup-banner-actions">
         <button id="bannerConnectBtn" type="button" class="btn btn-primary btn-sm">Sambung Google Sheet</button>
@@ -387,7 +387,7 @@
         <div class="modal-info-box">
           <div class="stat-line">
             <span class="muted">Mod Aktif:</span>
-            <strong id="settingsActiveMode">Mod Demo Lokal</strong>
+            <strong id="settingsActiveMode">Menyambung...</strong>
           </div>
           <div class="stat-line" style="margin-top: 6px;">
             <span class="muted">Pautan Google Sheet:</span>
@@ -422,7 +422,6 @@
 
         <div class="settings-secondary-actions">
           <button id="settingsExportCsvBtn" type="button" class="btn btn-outline btn-sm">Eksport CSV</button>
-          <button id="resetDemoBtn" type="button" class="btn btn-danger-outline btn-sm">Reset Data Demo</button>
           <button id="clearGasBtn" type="button" class="btn btn-ghost btn-sm">Putus Sambungan Lokal</button>
         </div>
       </div>

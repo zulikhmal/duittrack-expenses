@@ -1,7 +1,6 @@
 const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/10tMHyAHHCFKBLmNYwKKlwzQ8fbrIBNhd04Ht3JrVtlQ/edit';
 
 const STORAGE_KEYS = {
-  DEMO_DATA: 'duittrack_demo_v1',
   DIRECT_GAS: 'duittrack_direct_gas_v1',
   THEME: 'duittrack_theme_v1',
   APP_PIN: 'duittrack_pin_v1'
@@ -124,95 +123,6 @@ function computePaymentState(amount, paidAmount, paidAt) {
   };
 }
 
-function createDefaultDemoData(month = getTodayMonth()) {
-  const today = getTodayDate();
-  return {
-    expenses: [
-      {
-        id: 'exp_demo_1',
-        month,
-        date: `${month}-01`,
-        title: 'Sewa Rumah',
-        category: 'Rumah & Bil',
-        amount: 1200,
-        paid_amount: 1200,
-        status: 'paid',
-        paid_at: `${month}-01`,
-        notes: 'Contoh rekod dah bayar (klik untuk undo)',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'exp_demo_2',
-        month,
-        date: `${month}-10`,
-        title: 'Bil Elektrik & Air',
-        category: 'Rumah & Bil',
-        amount: 250,
-        paid_amount: 100,
-        status: 'partial',
-        paid_at: `${month}-12`,
-        notes: 'Bayar separuh dulu',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'exp_demo_3',
-        month,
-        date: today.startsWith(month) ? today : `${month}-25`,
-        title: 'Internet Unifi',
-        category: 'Langganan',
-        amount: 139,
-        paid_amount: 0,
-        status: 'unpaid',
-        paid_at: '',
-        notes: 'Belum bayar — klik tanda ✔ untuk deduct',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'exp_demo_4',
-        month,
-        date: `${month}-05`,
-        title: 'Ansuran Kereta',
-        category: 'Hutang & Pinjaman',
-        amount: 680,
-        paid_amount: 0,
-        status: 'unpaid',
-        paid_at: '',
-        notes: 'Tarikh akhir setiap 28 haribulan',
-        created_at: new Date().toISOString()
-      }
-    ],
-    budgets: [
-      {
-        month,
-        income_budget: 4500,
-        notes: `Bajet / Gaji ${formatMonthLabel(month)}`,
-        updated_at: new Date().toISOString()
-      }
-    ]
-  };
-}
-
-function readDemoStore() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DEMO_DATA);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.expenses) && Array.isArray(parsed.budgets)) {
-        return parsed;
-      }
-    }
-  } catch {
-    // ignore malformed local storage
-  }
-  const seeded = createDefaultDemoData();
-  localStorage.setItem(STORAGE_KEYS.DEMO_DATA, JSON.stringify(seeded));
-  return seeded;
-}
-
-function writeDemoStore(store) {
-  localStorage.setItem(STORAGE_KEYS.DEMO_DATA, JSON.stringify(store));
-}
-
 function getActiveBackendMode() {
   if (state.config.configured) {
     return state.config.mode;
@@ -220,7 +130,7 @@ function getActiveBackendMode() {
   if (state.directGas.url) {
     return 'direct_gas';
   }
-  return 'demo';
+  return 'unconfigured';
 }
 
 function getSpreadsheetReferenceUrl() {
@@ -285,206 +195,86 @@ async function directGasCall(action, payload = {}) {
   return data;
 }
 
+function requireActiveBackendMode() {
+  const mode = getActiveBackendMode();
+  if (mode !== 'apps_script' && mode !== 'sheets_api' && mode !== 'direct_gas') {
+    throw new Error('Google Sheet belum disambungkan. Sila semak Tetapan sambungan.');
+  }
+  return mode;
+}
+
 const dataAdapter = {
   async loadAll() {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch('/api/expenses');
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('list');
     }
-    const store = readDemoStore();
-    return { ok: true, expenses: store.expenses, budgets: store.budgets };
+    return serverApiFetch('/api/expenses');
   },
 
   async addExpense(payload) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch('/api/expenses', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('add', payload);
     }
-    const store = readDemoStore();
-    const payment = computePaymentState(
-      payload.amount,
-      payload.status === 'paid' ? payload.amount : (payload.paid_amount || 0),
-      payload.paid_at
-    );
-    const expense = {
-      id: payload.id || `exp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      month: payload.month || payload.date.slice(0, 7),
-      date: payload.date,
-      title: String(payload.title || '').trim(),
-      category: payload.category || 'Lain-lain',
-      amount: payment.amount,
-      paid_amount: payment.paid_amount,
-      status: payment.status,
-      paid_at: payment.paid_at,
-      notes: String(payload.notes || '').trim(),
-      created_at: new Date().toISOString()
-    };
-    store.expenses.push(expense);
-    writeDemoStore(store);
-    return { ok: true, expense };
+    return serverApiFetch('/api/expenses', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   },
 
   async updateExpense(id, payload) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('update', { ...payload, id });
     }
-    const store = readDemoStore();
-    const idx = store.expenses.findIndex((item) => item.id === id);
-    if (idx === -1) throw new Error('Rekod tidak ditemui.');
-    const cur = store.expenses[idx];
-    const nextDate = payload.date || cur.date;
-    const payment = computePaymentState(
-      payload.amount ?? cur.amount,
-      payload.paid_amount ?? cur.paid_amount,
-      payload.paid_at ?? cur.paid_at
-    );
-    const updated = {
-      ...cur,
-      title: payload.title !== undefined ? String(payload.title).trim() : cur.title,
-      date: nextDate,
-      month: nextDate.slice(0, 7),
-      category: payload.category || cur.category,
-      amount: payment.amount,
-      paid_amount: payment.paid_amount,
-      status: payment.status,
-      paid_at: payment.paid_at,
-      notes: payload.notes !== undefined ? String(payload.notes).trim() : cur.notes
-    };
-    store.expenses[idx] = updated;
-    writeDemoStore(store);
-    return { ok: true, expense: updated };
+    return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
   },
 
   async payExpense(id, payload) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}/pay`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('pay', { ...payload, id });
     }
-    const store = readDemoStore();
-    const idx = store.expenses.findIndex((item) => item.id === id);
-    if (idx === -1) throw new Error('Rekod tidak ditemui.');
-    const cur = store.expenses[idx];
-    let targetPaid = cur.paid_amount;
-    let targetPaidAt = getTodayDate();
-    if (payload.mode === 'full') {
-      targetPaid = cur.amount;
-    } else if (payload.mode === 'unpay') {
-      targetPaid = 0;
-      targetPaidAt = '';
-    } else if (payload.mode === 'partial') {
-      targetPaid = payload.add_amount !== undefined
-        ? cur.paid_amount + Number(payload.add_amount)
-        : Number(payload.paid_amount);
-    }
-    const payment = computePaymentState(cur.amount, targetPaid, targetPaidAt);
-    const updated = {
-      ...cur,
-      paid_amount: payment.paid_amount,
-      status: payment.status,
-      paid_at: payment.paid_at
-    };
-    store.expenses[idx] = updated;
-    writeDemoStore(store);
-    return { ok: true, expense: updated };
+    return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   },
 
   async deleteExpense(id) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('delete', { id });
     }
-    const store = readDemoStore();
-    store.expenses = store.expenses.filter((item) => item.id !== id);
-    writeDemoStore(store);
-    return { ok: true, deletedId: id };
+    return serverApiFetch(`/api/expenses/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
   },
 
   async setBudget(month, payload) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch(`/api/budgets/${encodeURIComponent(month)}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('set_budget', { ...payload, month });
     }
-    const store = readDemoStore();
-    const budget = {
-      month,
-      income_budget: roundMoney(payload.income_budget),
-      notes: String(payload.notes || '').trim(),
-      updated_at: new Date().toISOString()
-    };
-    const idx = store.budgets.findIndex((b) => b.month === month);
-    if (idx !== -1) store.budgets[idx] = budget;
-    else store.budgets.push(budget);
-    writeDemoStore(store);
-    return { ok: true, budget };
+    return serverApiFetch(`/api/budgets/${encodeURIComponent(month)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
   },
 
   async copyMonth(fromMonth, toMonth) {
-    const mode = getActiveBackendMode();
-    if (mode === 'apps_script' || mode === 'sheets_api') {
-      return serverApiFetch('/api/expenses/copy-month', {
-        method: 'POST',
-        body: JSON.stringify({ from_month: fromMonth, to_month: toMonth })
-      });
-    }
+    const mode = requireActiveBackendMode();
     if (mode === 'direct_gas') {
       return directGasCall('copy_month', { from_month: fromMonth, to_month: toMonth });
     }
-    const store = readDemoStore();
-    const srcItems = store.expenses.filter((e) => e.month === fromMonth);
-    const [y, m] = toMonth.split('-').map(Number);
-    const maxDays = new Date(y, m, 0).getDate();
-    const added = srcItems.map((src, i) => {
-      const day = Math.min(Math.max(1, Number((src.date || '').slice(8, 10)) || 1), maxDays);
-      return {
-        id: `exp_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 5)}`,
-        month: toMonth,
-        date: `${toMonth}-${String(day).padStart(2, '0')}`,
-        title: src.title,
-        category: src.category,
-        amount: src.amount,
-        paid_amount: 0,
-        status: 'unpaid',
-        paid_at: '',
-        notes: src.notes,
-        created_at: new Date().toISOString()
-      };
+    return serverApiFetch('/api/expenses/copy-month', {
+      method: 'POST',
+      body: JSON.stringify({ from_month: fromMonth, to_month: toMonth })
     });
-    store.expenses.push(...added);
-    writeDemoStore(store);
-    return { ok: true, added };
   }
 };
 
@@ -526,12 +316,12 @@ function renderStatusHeader() {
     badgeText.textContent = 'Google Sheet (Terus)';
     settingsMode.textContent = 'Pelayar -> Google Apps Script';
   } else {
-    badge.classList.add('status-pill--demo');
-    badgeText.textContent = 'Mod Demo Lokal';
-    settingsMode.textContent = 'Mod Demo Lokal (Pelayar)';
+    badge.classList.add('status-pill--error');
+    badgeText.textContent = 'Belum Disambung';
+    settingsMode.textContent = 'Belum Disambung ke Google Sheet';
   }
 
-  setupBanner.classList.toggle('hidden', mode !== 'demo');
+  setupBanner.classList.toggle('hidden', mode !== 'unconfigured');
   sheetLink.href = getSpreadsheetReferenceUrl();
 }
 
@@ -1143,7 +933,6 @@ function openSettingsModal() {
   document.getElementById('settingsGasUrl').value = state.directGas.url || '';
   document.getElementById('settingsGasSecret').value = state.directGas.secret || '';
   document.getElementById('settingsSheetUrlInput').value = getSpreadsheetReferenceUrl();
-  document.getElementById('resetDemoBtn').classList.toggle('hidden', getActiveBackendMode() !== 'demo');
   document.getElementById('clearGasBtn').classList.toggle('hidden', !state.directGas.url);
   renderStatusHeader();
   openModal('settingsModal');
@@ -1316,17 +1105,6 @@ function initEventListeners() {
   document.getElementById('settingsForm').addEventListener('submit', handleSaveSettings);
   document.getElementById('testConnBtn').addEventListener('click', handleTestConnection);
 
-  document.getElementById('resetDemoBtn').addEventListener('click', () => {
-    if (!window.confirm('Tetapkan semula data demo lokal ke contoh asal?')) return;
-    const seeded = createDefaultDemoData(state.currentMonth);
-    writeDemoStore(seeded);
-    state.expenses = seeded.expenses;
-    state.budgets = seeded.budgets;
-    closeModal('settingsModal');
-    renderAll();
-    showToast('Data demo ditetapkan semula.');
-  });
-
   document.getElementById('clearGasBtn').addEventListener('click', async () => {
     state.directGas = { url: '', secret: '', spreadsheetUrl: getSpreadsheetReferenceUrl() };
     localStorage.removeItem(STORAGE_KEYS.DIRECT_GAS);
@@ -1353,6 +1131,11 @@ function initEventListeners() {
 }
 
 async function init() {
+  try {
+    localStorage.removeItem('duittrack_demo_v1');
+  } catch {
+    // ignore storage access issues
+  }
   const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
   applyTheme(savedTheme);
   syncAddDateWithMonth();
